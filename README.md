@@ -1,32 +1,19 @@
-# 🛡️ Brave-Style YouTube Adblock
+# 🦁 Brave-Style YouTube Adblock
 
-Script pemblokir iklan YouTube multi-layer, mengikuti metode Brave Shields.
+&gt; *"Iklan itu kayak teman yang datang pas lagi asyik nonton — terlalu intrusive."*  
+&gt; — Orang bijak yang lelah menunggu tombol "Skip Ad"
 
-## 🚀 Install Langsung
-
-**Klik tombol di bawah ini** (pastikan Tampermonkey sudah terinstall):
-
-[![Install Tampermonkey Script](https://img.shields.io/badge/Install-🐵%20Tampermonkey-green?style=for-the-badge&logo=googlechrome)](https://raw.githubusercontent.com/Unknows05/yt-adblock/main/youtube-adblock.user.js)
-
-## 📋 Cara Install Manual
-
-1. Install extension [Tampermonkey](https://www.tampermonkey.net/)
-2. Klik tombol hijau di atas ☝️
-3. Klik "Install" pada popup yang muncul
-4. Selesai! Buka YouTube dan nikmati tanpa iklan
-
-## 🔄 Auto Update
-
-Script akan update otomatis setiap hari. Tampermonkey akan memberitahu jika ada versi baru.
-
-## 🛠️ Fitur
-
-- ✅ Block iklan video (pre-roll, mid-roll)
-- ✅ Block iklan banner & sidebar
-- ✅ Auto-skip tombol "Skip Ad"
-- ✅ Bypass deteksi adblock YouTube
-- ✅ Tidak merusak autoplay video (fixed)
+[![Coba Script](https://img.shields.io/badge/Coba_Script-🚀_Install-brightgreen?style=for-the-badge&logo=tampermonkey)](https://raw.githubusercontent.com/Unknows05/yt-adblock/main/youtube-adblock.user.js)
+[![Version](https://img.shields.io/badge/Version-1.2.1-blue?style=flat-square)]()
 
 ---
 
-**Catatan:** Gunakan dengan bijak. Script ini untuk edukasi.
+## 🎯 Apa Ini?
+
+Bayangkan Brave Shields, tapi versi ringan yang tinggal di browser kamu. Script ini cuma melihat-lihat (secara teknis: intercept network, filter DOM, block script) lalu bilang "nope" ke iklan yang mencoba masuk.
+
+**Spoiler:** Tombol "Skip Ad" akan merasa diabaikan. Dia akan langsung diklik otomatis sebelum kamu sempat melihatnya.
+
+---
+
+## 🧠 Cara Kerja (Versi Fun)
