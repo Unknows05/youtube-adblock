@@ -10,8 +10,6 @@
 // @updateURL    https://github.com/Unknows05/Brave-StyleYouTubeAdblock/youtube-adblock/raw/main/youtube-adblock.user.js
 // @downloadURL  https://github.com/Unknows05/Brave-StyleYouTubeAdblock/youtube-adblock/raw/main/youtube-adblock.user.js
 // @grant        none
-// @run-at       document-start
-// @noframes
 // ==/UserScript==
 
 (function() {
