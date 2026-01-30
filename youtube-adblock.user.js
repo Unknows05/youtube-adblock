@@ -7,7 +7,7 @@
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
 // @icon         https://brave.com/static-assets/images/brave-favicon.png
-// @updateURL    hhttps://raw.githubusercontent.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
+// @updateURL    https://raw.githubusercontent.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
 // @downloadURL  https://raw.githubusercontent.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
 // @grant        none
 // @run-at       document-start
