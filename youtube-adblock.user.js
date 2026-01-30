@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Brave-Style YouTube Adblock
-// @namespace    https://github.com/brave/adblock-resources
+// @namespace    https://github.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
 // @version      1.2.1
 // @description  Multi-layer adblock mimicking Brave Shields - FIXED AUTO-PLAY BUG
-// @author       Based on Brave Shields & EasyList
+// @author       Unknows05
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
 // @icon         https://brave.com/static-assets/images/brave-favicon.png
+// @updateURL    hhttps://raw.githubusercontent.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
+// @downloadURL  https://raw.githubusercontent.com/Unknows05/youtube-adblock/blob/main/youtube-adblock.user.js
 // @grant        none
 // @run-at       document-start
 // @noframes
