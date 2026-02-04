@@ -1,568 +1,355 @@
 // ==UserScript==
-// @name         Brave-Style YouTube Adblock
-// @namespace    https://github.com/Unknows05/Brave-StyleYouTubeAdblock
-// @version      1.2.1
-// @description  Multi-layer adblock mimicking Brave Shields - FIXED AUTO-PLAY BUG
-// @author       Unknowns05
+// @name         Efficient YouTube Adblock (Hybrid Style)
+// @namespace    http://tampermonkey.net/
+// @version      1.0.0
+// @description  A refined adblock script combining RAT efficiency with BSA coverage, focusing on stability and reduced UI errors.
+// @author       Assistant (Hybrid Approach)
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
-// @icon         https://brave.com/static-assets/images/brave-favicon.png
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=youtube.com
 // @grant        none
 // @run-at       document-start
-// @noframes
-// @updateURL    https://raw.githubusercontent.com/Unknows05/Brave-StyleYouTubeAdblock/main/youtube-adblock.user.js
-// @downloadURL  https://raw.githubusercontent.com/Unknows05/Brave-StyleYouTubeAdblock/main/youtube-adblock.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
-    // ============================================================
-    // CONFIGURATION
-    // ============================================================
-    
+    // --- CONFIGURATION ---
     const CONFIG = {
-        // Layer 1: Network Blocking (Domain-based)
-        enableNetworkBlock: true,
-        
-        // Layer 2: DOM Filtering (Element hiding)
-        enableDOMFilter: true,
-        
-        // Layer 3: Script Blocking
-        enableScriptBlock: true,
-        
-        // Anti-Adblock Bypass
-        enableAntiAdblockBypass: true,
-        
-        // Debug mode
         debug: false,
-        
-        // Update check
-        autoUpdate: true
+        // Use RAT-style core logic for video ads (skip/speed mute)
+        enableCoreAdHandling: true,
+        // Use CSS injection for broader UI ad hiding (inspired by BSA, but simplified)
+        enableBroadUIHiding: true,
+        // Track user interaction to prevent autoplay bugs (inspired by BSA)
+        enableUserInteractionTracking: true,
+        // Interval for core ad check (should match RAT's speed)
+        coreAdCheckInterval: 50, // ms
+        // Interval for UI cleanup (less frequent than core check)
+        uiCleanupInterval: 1000, // ms
+        // Timeout for considering a user pause as intentional
+        userPauseTimeoutMs: 5000
     };
 
-    // ============================================================
-    // STATE MANAGEMENT - Track user interaction
-    // ============================================================
-    
-    let state = {
-        userPaused: false,           // User manually paused the video
-        lastUserInteraction: 0,      // Timestamp of last user interaction
-        isAdShowing: false,          // Currently in ad
-        videoElement: null,          // Reference to video element
-        adSkipAttempted: false       // Prevent multiple skip attempts
+    // --- STATE MANAGEMENT ---
+    const state = {
+        // Core ad state (like RAT)
+        isAdCurrentlyPlaying: false,
+        adLoopCounter: 0,
+        originalVideoPlaybackRate: 1,
+        userPausedAt: 0, // Timestamp
+        // UI state
+        initialUrl: window.location.href,
+        // For realistic interaction simulation (like RAT)
+        clickEvent: new PointerEvent('click', {
+            bubbles: true, cancelable: true, view: window,
+            button: 0, buttons: 1, detail: 1,
+            // Add randomness to coordinates like the original RAT
+            clientX: 0, clientY: 0, screenX: 0, screenY: 0,
+            // Keep other props constant as in RAT
+            pointerId: 1, pointerType: 'mouse', isPrimary: true,
+            ctrlKey: false, altKey: false, shiftKey: false, metaKey: false,
+            width: 1, height: 1, pressure: 0.5, tiltX: 0, tiltY: 0
+        }),
+        // Video reference
+        videoElement: null
     };
 
-    const USER_INTERACTION_TIMEOUT = 5000; // 5 seconds - user interaction is valid for this duration
-
-    // ============================================================
-    // LAYER 1: NETWORK-LEVEL BLOCKING
-    // ============================================================
-    
-    function setupNetworkBlocking() {
-        if (!CONFIG.enableNetworkBlock) return;
-
-        const AD_DOMAINS = [
-            'doubleclick.net',
-            'googleadservices.com',
-            'adservice.google',
-            'pagead2.googlesyndication.com',
-            'pubads.g.doubleclick.net',
-            'youtube-nocookie.com',
-            'imasdk.googleapis.com',
-            'static.ads-twitter.com',
-            'ads.youtube.com'
-        ];
-
-        // Intercept XMLHttpRequest
-        const originalOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url) {
-            if (typeof url === 'string') {
-                const lowerUrl = url.toLowerCase();
-                
-                for (const domain of AD_DOMAINS) {
-                    if (lowerUrl.includes(domain)) {
-                        if (CONFIG.debug) console.log('🛡️ [NETWORK BLOCK] Blocked:', url);
-                        this.abort();
-                        return;
-                    }
-                }
-            }
-            return originalOpen.apply(this, arguments);
+    // --- HELPER FUNCTIONS ---
+    function log(message, level = 'info') {
+        if (!CONFIG.debug) return;
+        const prefix = '🛡️ [Efficient Adblock]';
+        const styles = {
+            info: 'color: #2196F3; font-weight: bold;',
+            warn: 'color: #FF9800; font-weight: bold;',
+            error: 'color: #F44336; font-weight: bold;',
         };
-
-        // Intercept Fetch API
-        const originalFetch = window.fetch;
-        window.fetch = function(input, init) {
-            let url = typeof input === 'string' ? input : input.url;
-            
-            if (url) {
-                const lowerUrl = url.toLowerCase();
-                
-                for (const domain of AD_DOMAINS) {
-                    if (lowerUrl.includes(domain)) {
-                        if (CONFIG.debug) console.log('🛡️ [NETWORK BLOCK] Blocked fetch:', url);
-                        return Promise.reject(new Error('Ad request blocked'));
-                    }
-                }
-            }
-            
-            return originalFetch.apply(this, arguments);
-        };
-
-        log('Layer 1: Network blocking enabled');
+        const style = styles[level] || styles.info;
+        console.log(`%c${prefix}%c ${message}`, style, '');
     }
 
-    // ============================================================
-    // LAYER 2: DOM FILTERING (CSS Injection)
-    // ============================================================
-    
-    function setupDOMFiltering() {
-        if (!CONFIG.enableDOMFilter) return;
+    function getVideoElement() {
+        return document.querySelector('video');
+    }
 
-        const CSS_FILTERS = `
-            /* ===== VIDEO PLAYER ADS ===== */
-            .ad-showing,
-            .ytp-ad-player-overlay,
-            .ytp-ad-text-overlay,
-            .ytp-ad-module,
+    function updateVideoReference() {
+        const video = getVideoElement();
+        if (video && video !== state.videoElement) {
+            state.videoElement = video;
+            log('Video element updated.');
+        }
+        return state.videoElement;
+    }
+
+    // --- CORE AD HANDLING (Inspired by RAT v5.0) ---
+    function setupCoreAdHandling() {
+        if (!CONFIG.enableCoreAdHandling) {
+            log('Core ad handling disabled by config.', 'warn');
+            return;
+        }
+
+        log('Initializing core ad handling (RAT-style)...');
+
+        setInterval(() => {
+            const video = updateVideoReference();
+            if (!video) {
+                // log('No video element found, skipping ad check.', 'warn');
+                return;
+            }
+
+            const adElement = document.querySelector('.ad-showing');
+            const isAdPlaying = !!adElement;
+
+            if (isAdPlaying && !state.isAdCurrentlyPlaying) {
+                // --- AD STARTED ---
+                log('Ad detected (Core Handler).');
+                state.isAdCurrentlyPlaying = true;
+                state.adLoopCounter = 0; // Reset counter when new ad starts
+
+                // Mute audio immediately
+                video.muted = true;
+
+            } else if (!isAdPlaying && state.isAdCurrentlyPlaying) {
+                // --- AD ENDED ---
+                log('Ad finished (Core Handler).');
+                state.isAdCurrentlyPlaying = false;
+                state.adLoopCounter = 0; // Reset counter when ad ends
+
+                // Restore audio
+                video.muted = false;
+                // Restore original playback rate if it was changed by an ad attempt
+                if (video.playbackRate === 10) { // Assuming 10x was used for skipping
+                    video.playbackRate = state.originalVideoPlaybackRate;
+                }
+            }
+
+            if (state.isAdCurrentlyPlaying) {
+                state.adLoopCounter++;
+                // Attempt to skip the ad
+                attemptSkipCurrentAd(video);
+            } else {
+                 // Store the original playback rate when not in an ad
+                if (isFinite(video.playbackRate) && video.playbackRate !== 10) {
+                    state.originalVideoPlaybackRate = video.playbackRate;
+                }
+            }
+
+        }, CONFIG.coreAdCheckInterval);
+    }
+
+    function attemptSkipCurrentAd(video) {
+        // 1. Try clicking skip buttons (like RAT)
+        const skipSelectors = [
+            '#ytp-ad-skip-button-container',
+            '#ytp-ad-skip-button-modern',
+            '.videoAdUiSkipButton',
+            '.ytp-ad-skip-button',
+            '.ytp-ad-skip-button-modern',
+            '.ytp-ad-skip-button-slot'
+        ];
+        for (const selector of skipSelectors) {
+            const button = document.querySelector(selector);
+            if (button && !button.disabled) {
+                log(`Clicking skip button: ${selector}`);
+                button.dispatchEvent(state.clickEvent);
+                // Optional: Break after first click attempt if desired
+                // break;
+            }
+        }
+
+        // 2. Force skip to end (core RAT technique)
+        if (video && isFinite(video.duration) && video.duration > 0) {
+            const randomOffset = Math.random() * (0.5 - 0.1) + 0.1;
+            try {
+                video.currentTime = video.duration + randomOffset;
+                log(`Force skipped ad (currentTime = ${video.currentTime}).`);
+            } catch (e) {
+                log(`Error force skipping: ${e.message}`, 'error');
+            }
+        }
+
+        // 3. Ensure video plays after skip attempt
+        if (video.paused) {
+            video.play().catch(() => { /* Ignore play errors */ });
+        }
+    }
+
+
+    // --- USER INTERACTION TRACKING (Refined BSA-style) ---
+    function setupUserInteractionTracking() {
+        if (!CONFIG.enableUserInteractionTracking) {
+            log('User interaction tracking disabled by config.', 'warn');
+            return;
+        }
+
+        log('Initializing user interaction tracking...');
+
+        // Listen for spacebar press (common play/pause toggle)
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault(); // Prevent default space scroll if needed
+                const video = getVideoElement();
+                if (video) {
+                    state.userPausedAt = Date.now();
+                    log(`User interaction: Space pressed. Video paused: ${video.paused}`);
+                    // No need to manually pause/play, just record the time.
+                }
+            }
+        }, true); // Use capture phase
+
+        // Listen for clicks on player controls area (play/pause button area)
+        const playerContainerSelector = '.html5-video-player, .ytp-chrome-bottom'; // Common areas
+        document.addEventListener('click', (e) => {
+            const playerContainer = document.querySelector(playerContainerSelector);
+            if (playerContainer && playerContainer.contains(e.target)) {
+                const video = getVideoElement();
+                if (video) {
+                    state.userPausedAt = Date.now();
+                    log(`User interaction: Click on player area. Video paused: ${video.paused}`);
+                }
+            }
+        }, true); // Use capture phase
+    }
+
+    // --- SMART AUTO-PLAY PREVENTION ---
+    function setupSmartAutoplayControl() {
+        // This runs alongside the core ad handler
+        setInterval(() => {
+            const video = state.videoElement;
+            if (!video || !state.isAdCurrentlyPlaying) {
+                // Only intervene if video is paused, an ad *was* playing, and user didn't pause recently
+                if (video && video.paused && !state.isAdCurrentlyPlaying) {
+                    const timeSinceUserInteraction = Date.now() - state.userPausedAt;
+                    const userPausedRecently = timeSinceUserInteraction < CONFIG.userPauseTimeoutMs;
+
+                    if (!userPausedRecently) {
+                        // Likely an anti-adblock or unexpected pause, try to resume
+                        log('Smart autoplay: Attempting to resume paused video (not user-initiated).');
+                        video.play().catch(() => { /* Ignore play errors */ });
+                    } else {
+                        log('Smart autoplay: Respecting user pause (paused recently).');
+                    }
+                }
+                return; // Exit if no active ad
+            }
+
+            // If an ad IS playing and video is paused, ensure it plays (anti-adblock)
+            if (video && video.paused && state.isAdCurrentlyPlaying) {
+                 log('Smart autoplay: Ad playing, ensuring video continues.');
+                 video.play().catch(() => { /* Ignore play errors */ });
+            }
+        }, 500); // Check less frequently than core ad loop
+    }
+
+
+    // --- BROAD UI HIDING (Refined BSA-style) ---
+    function setupBroadUIHiding() {
+        if (!CONFIG.enableBroadUIHiding) {
+            log('Broad UI hiding disabled by config.', 'warn');
+            return;
+        }
+
+        log('Initializing broad UI hiding (refined BSA-style)...');
+
+        // CSS rules for hiding ads (inspired by BSA, but simplified/conservative)
+        // Focus on known ad containers, avoid overly generic selectors that might affect menus
+        const uiHideRules = `
+            /* -- Video Player Overlays/Modules -- */
             .ytp-ad-overlay-container,
-            .ytp-ad-progress-list,
-            .ytp-ad-skip-button,
-            .ytp-ad-skip-button-modern,
-            .ytp-ad-skip-button-container,
+            .ytp-ad-module,
+            .ytp-ad-image-overlay,
+            .ytp-ad-overlay-slot,
+            .ytp-ad-preview-container,
+            .ytp-ad-action-interstitial,
             .videoAdUi,
-            .videoAdUiLearnMore,
-            .videoAdUiVisitAdvertiserLink,
-            
-            /* ===== PAGE ADS ===== */
+            .ytp-ad-loading-spinner,
+            .ytp-ad-message-text,
+            /* -- Page/Sidebar Ads (Common Renderers) -- */
             ytd-display-ad-renderer,
             ytd-promoted-sparkles-web-renderer,
             ytd-promoted-video-renderer,
             ytd-action-companion-ad-renderer,
-            ytd-video-masthead-ad-advertiser-info-renderer,
-            ytd-video-masthead-ad-primary-video-renderer,
             ytd-in-feed-ad-layout-renderer,
             ytd-ad-slot-renderer,
             ytd-banner-promo-renderer,
-            ytd-statement-banner-renderer,
             ytd-mealbar-promo-renderer,
-            ytd-enforcement-message-view-model,
             ytd-merch-shelf-renderer,
-            
-            /* ===== SIDEBAR & FEED ADS ===== */
-            ytm-promoted-sparkles-web-renderer,
-            ytd-compact-promoted-video-renderer,
-            ytd-promoted-sparkles-text-search-renderer,
-            
-            /* ===== ANTI-ADBLOCK ===== */
-            tp-yt-iron-overlay-backdrop,
-            ytd-popup-container > tp-yt-paper-dialog,
-            
-            /* ===== BANNERS ===== */
+            ytd-player-legacy-desktop-watch-ads-renderer,
+            /* -- Search Result Ads -- */
+            ytd-search-pyv-renderer,
+            ytd-movie-offer-module-renderer,
+            /* -- Masthead/Sidebar Banners -- */
             #masthead-ad,
             #player-ads,
             .player-ads,
-            .ytd-video-masthead-ad-v3-renderer,
-            
-            /* ===== SPONSORED CONTENT ===== */
+            ytd-video-masthead-ad-renderer,
+            /* -- Specific Ad Data Attributes -- */
             [data-is-sponsored],
             [data-ad-slot],
-            .ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
-            
-            /* ===== HIDE ALL ===== */
-            .style-scope.ytd-enforcement-message-view-model,
-            .style-scope.ytd-mealbar-promo-renderer {
+            ytd-rich-item-renderer[is-ad],
+            ytd-video-renderer[is-ad],
+            /* -- Anti-Adblock Elements -- */
+            ytd-enforcement-message-view-model,
+            tp-yt-iron-overlay-backdrop,
+            ytd-popup-container tp-yt-paper-dialog,
+            /* -- Hide Empty Ad Slots -- */
+            ytd-ad-slot-renderer:empty,
+            ytd-companion-slot-renderer:empty {
                 display: none !important;
-                visibility: hidden !important;
-                height: 0 !important;
-                width: 0 !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                pointer-events: none !important;
             }
-            
-            /* ===== FIX LAYOUT AFTER REMOVAL ===== */
+            /* -- Layout Fix -- */
             ytd-watch-flexy[flexy][is-two-columns_]:not([fullscreen]) {
                 --ytd-watch-flexy-player-width: calc(var(--ytd-watch-flexy-player-width) + var(--ytd-watch-flexy-sidebar-width)) !important;
-            }
-            
-            /* ===== PREVENT AD LOADING SPINNER ===== */
-            .ytp-ad-loading-spinner {
-                display: none !important;
             }
         `;
 
         const style = document.createElement('style');
-        style.id = 'brave-adblock-styles';
-        style.textContent = CSS_FILTERS;
-        style.setAttribute('data-adblock', 'brave-style');
-        
-        if (document.head) {
-            document.head.appendChild(style);
-        } else {
-            const observer = new MutationObserver(() => {
-                if (document.head) {
-                    document.head.appendChild(style);
-                    observer.disconnect();
-                }
-            });
-            observer.observe(document.documentElement, { childList: true });
-        }
+        style.id = 'efficient-adblock-ui-hide';
+        style.textContent = uiHideRules;
+        document.head.appendChild(style);
 
-        log('Layer 2: DOM filtering enabled');
-    }
+        log('CSS rules for UI hiding injected.');
 
-    // ============================================================
-    // LAYER 3: SCRIPT BLOCKING
-    // ============================================================
-    
-    function setupScriptBlocking() {
-        if (!CONFIG.enableScriptBlock) return;
-
-        const AD_SCRIPT_PATTERNS = [
-            /adsbygoogle/,
-            /google_ad/,
-            /doubleclick/,
-            /pubads/,
-            /ima3/,
-            /adblock/,
-            /prebid/
-        ];
-
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.tagName === 'SCRIPT') {
-                        const src = node.src || node.textContent;
-                        
-                        for (const pattern of AD_SCRIPT_PATTERNS) {
-                            if (pattern.test(src)) {
-                                node.remove();
-                                if (CONFIG.debug) console.log('🛡️ [SCRIPT BLOCK] Removed:', pattern);
-                                break;
-                            }
-                        }
-                    }
-                });
-            });
-        });
-
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true
-        });
-
-        log('Layer 3: Script blocking enabled');
-    }
-
-    // ============================================================
-    // USER INTERACTION TRACKING - FIX FOR AUTO-PLAY BUG
-    // ============================================================
-    
-    function setupUserInteractionTracking() {
-        // Get video player container
-        const getPlayerContainer = () => {
-            return document.querySelector('.html5-video-player') || 
-                   document.querySelector('.ytp-chrome-bottom') ||
-                   document.querySelector('video');
-        };
-
-        // Track user clicks on video player (play/pause button area)
-        document.addEventListener('click', (e) => {
-            const playerContainer = getPlayerContainer();
-            const video = document.querySelector('video');
-            
-            if (playerContainer && playerContainer.contains(e.target)) {
-                state.lastUserInteraction = Date.now();
-                
-                // Check if video state changed to paused
-                if (video && video.paused) {
-                    state.userPaused = true;
-                    log('⏸️ User manually paused video', 'info');
-                } else if (video && !video.paused) {
-                    state.userPaused = false;
-                    log('▶️ User manually played video', 'info');
-                }
-            }
-        }, true);
-
-        // Track keyboard spacebar (common pause shortcut)
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' || e.key === ' ') {
-                const activeElement = document.activeElement;
-                const video = document.querySelector('video');
-                
-                // If space pressed and video exists (not in input field)
-                if (video && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)) {
-                    state.lastUserInteraction = Date.now();
-                    
-                    // Toggle userPaused state
-                    if (video.paused) {
-                        state.userPaused = false;
-                        log('▶️ User pressed space to play', 'info');
-                    } else {
-                        state.userPaused = true;
-                        log('⏸️ User pressed space to pause', 'info');
-                    }
-                }
-            }
-        }, true);
-
-        // Track video element play/pause events
-        const videoObserver = new MutationObserver(() => {
-            const video = document.querySelector('video');
-            if (video && video !== state.videoElement) {
-                state.videoElement = video;
-                
-                // Listen to video events
-                video.addEventListener('pause', () => {
-                    // Only set userPaused if it's not an ad
-                    if (!state.isAdShowing && !state.userPaused) {
-                        // This might be anti-adblock pause, check timestamp
-                        const timeSinceInteraction = Date.now() - state.lastUserInteraction;
-                        
-                        if (timeSinceInteraction > USER_INTERACTION_TIMEOUT) {
-                            // Likely anti-adblock pause, don't mark as user pause
-                            log('⏸️ Video paused (likely anti-adblock)', 'warn');
-                        }
-                    }
-                }, { once: true });
-                
-                video.addEventListener('play', () => {
-                    state.userPaused = false;
-                }, { once: true });
-            }
-        });
-
-        videoObserver.observe(document.documentElement, {
-            childList: true,
-            subtree: true
-        });
-
-        log('User interaction tracking enabled');
-    }
-
-    // ============================================================
-    // ANTI-ADBLOCK BYPASS - FIXED VERSION
-    // ============================================================
-    
-    function setupAntiAdblockBypass() {
-        if (!CONFIG.enableAntiAdblockBypass) return;
-
+        // Periodic cleanup for elements that might appear dynamically
         setInterval(() => {
-            const video = document.querySelector('video');
-            if (!video) return;
-
-            // 1. Dismiss anti-adblock buttons
-            const dismissBtn = document.querySelector('#dismiss-button, [aria-label="Close"], .ytp-ad-skip-button');
-            if (dismissBtn) {
-                dismissBtn.click();
-                log('Dismissed anti-adblock popup');
-            }
-
-            // 2. Remove enforcement message
-            const enforcement = document.querySelector('ytd-enforcement-message-view-model');
-            if (enforcement) {
-                enforcement.remove();
-                log('Removed enforcement message');
-            }
-
-            // 3. Remove overlay backdrop
-            const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop');
-            if (backdrop) {
-                backdrop.remove();
-            }
-
-            // 4. SMART AUTO-PLAY - Only play if:
-            //    - Video is paused
-            //    - NOT paused by user (within timeout)
-            //    - No ad is showing
-            if (video.paused && !state.userPaused) {
-                const timeSinceInteraction = Date.now() - state.lastUserInteraction;
-                
-                // Check if pause was recent user interaction
-                const isRecentUserPause = timeSinceInteraction < USER_INTERACTION_TIMEOUT;
-                
-                if (!isRecentUserPause && !state.isAdShowing) {
-                    // This is likely anti-adblock pause - auto-play
-                    video.play().then(() => {
-                        log('▶️ Auto-played (anti-adblock prevention)', 'info');
-                    }).catch(() => {
-                        // Ignore play errors
-                    });
-                } else if (isRecentUserPause) {
-                    // User recently paused, respect their choice
-                    if (CONFIG.debug) {
-                        console.log('⏸️ Respecting user pause (within timeout)');
-                    }
-                }
-            }
-
-        }, 1000);
-
-        log('Anti-adblock bypass enabled (with user pause protection)');
-    }
-
-    // ============================================================
-    // SKIP BUTTON AUTO-CLICK
-    // ============================================================
-    
-    function setupSkipButtonAutoClick() {
-        const skipSelectors = [
-            '.ytp-ad-skip-button',
-            '.ytp-ad-skip-button-modern',
-            '#skip-button:has(.ytp-ad-skip-button)',
-            '.videoAdUiSkipButton'
-        ];
-
-        setInterval(() => {
-            skipSelectors.forEach(selector => {
-                const button = document.querySelector(selector);
-                if (button && !button.disabled) {
-                    const clickEvent = new MouseEvent('click', {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window
-                    });
-                    button.dispatchEvent(clickEvent);
-                    log('⏭️ Auto-clicked skip button');
-                }
+            // Target specific elements that might not be caught by CSS alone or appear later
+            const elementsToRemove = document.querySelectorAll('ytd-enforcement-message-view-model, tp-yt-iron-overlay-backdrop');
+            elementsToRemove.forEach(el => {
+                 if (el.isConnected) { // Check if still in DOM
+                    el.remove();
+                    log('Removed leftover ad/enforcement element.');
+                 }
             });
-        }, 300);
-    }
 
-    // ============================================================
-    // AD DETECTION & HANDLING
-    // ============================================================
-    
-    function setupAdDetection() {
-        setInterval(() => {
-            const adElement = document.querySelector('.ad-showing, .ytp-ad-player-overlay');
-            const video = document.querySelector('video');
-            
-            if (adElement) {
-                state.isAdShowing = true;
-                state.adSkipAttempted = false;
-                
-                if (video) {
-                    // Mute ad audio
-                    video.muted = true;
-                    
-                    // Skip to end of ad
-                    if (!state.adSkipAttempted && isFinite(video.duration)) {
-                        const randomOffset = Math.random() * 0.5 + 0.1;
-                        try {
-                            video.currentTime = video.duration + randomOffset;
-                            state.adSkipAttempted = true;
-                            log('⏭️ Skipped ad by seeking to end');
-                        } catch (e) {
-                            if (CONFIG.debug) console.warn('Skip failed:', e);
-                        }
-                    }
-                }
-            } else {
-                state.isAdShowing = false;
-                state.adSkipAttempted = false;
-                
-                // Restore video state after ad
-                if (video) {
-                    video.muted = false;
-                }
+            // Check for URL change and trigger potential layout fixes if needed (though CSS usually suffices)
+            if (window.location.href !== state.initialUrl) {
+                log('URL changed, potential UI refresh.');
+                state.initialUrl = window.location.href;
+                // Could add more specific UI refresh logic here if needed
             }
-        }, 200);
+        }, CONFIG.uiCleanupInterval);
     }
 
-    // ============================================================
-    // UTILITY FUNCTIONS
-    // ============================================================
-    
-    function log(message, level = 'info') {
-        if (!CONFIG.debug) return;
-        
-        const prefix = '🛡️ [Brave-Style Adblock]';
-        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-        
-        switch(level) {
-            case 'error':
-                console.error(`${prefix} [${timestamp}] ❌ ${message}`);
-                break;
-            case 'warn':
-                console.warn(`${prefix} [${timestamp}] ⚠️ ${message}`);
-                break;
-            case 'info':
-            default:
-                console.info(`${prefix} [${timestamp}] ℹ️ ${message}`);
-        }
-    }
 
+    // --- INITIALIZATION ---
     function initialize() {
-        log('Initializing Brave-Style Adblock v1.2.1...', 'info');
-        
-        // Setup user interaction tracking FIRST
+        log('Starting Efficient YouTube Adblock v1.0.0...');
+        log('Config: ' + JSON.stringify(CONFIG));
+
+        // Order matters slightly: Interaction tracking helps core handler
         setupUserInteractionTracking();
-        
-        // Layer 1: Network blocking
-        setupNetworkBlocking();
-        
-        // Layer 2: DOM filtering
-        setupDOMFiltering();
-        
-        // Layer 3: Script blocking
-        setupScriptBlocking();
-        
-        // Ad detection
-        setupAdDetection();
-        
-        // Anti-adblock bypass (with fix)
-        setupAntiAdblockBypass();
-        
-        // Auto-skip buttons
-        setupSkipButtonAutoClick();
-        
-        log('✅ All layers active - Enjoy ad-free YouTube!', 'info');
+        setupCoreAdHandling();
+        setupSmartAutoplayControl();
+        setupBroadUIHiding(); // Run last to apply CSS after other logic hopefully settles UI
+
+        log('Initialization complete. Adblock active.');
     }
 
-    // ============================================================
-    // AUTO-UPDATE CHECK
-    // ============================================================
-    
-    function checkForUpdate() {
-        if (!CONFIG.autoUpdate) return;
-        
-        // Note: Update URL should point to your actual repository
-        const SCRIPT_URL = 'https://raw.githubusercontent.com/YOUR_REPO/brave-youtube-adblock/main/script.user.js';
-        
-        fetch(SCRIPT_URL)
-            .then(response => response.text())
-            .then(data => {
-                const match = data.match(/@version\s+(\d+\.\d+\.\d+)/);
-                if (match) {
-                    const remoteVersion = match[1];
-                    const currentVersion = GM_info?.script?.version || '1.0.0';
-                    
-                    if (remoteVersion > currentVersion) {
-                        log(`New version available: ${remoteVersion} (Current: ${currentVersion})`, 'warn');
-                    }
-                }
-            })
-            .catch(err => {
-                if (CONFIG.debug) console.warn('Update check failed:', err);
-            });
-    }
-
-    // ============================================================
-    // START SCRIPT
-    // ============================================================
-    
+    // Start the script
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
     } else {
         initialize();
-    }
-
-    if (CONFIG.autoUpdate) {
-        setTimeout(checkForUpdate, 5000);
     }
 
 })();
